@@ -32,9 +32,7 @@ bot.on(Events.InteractionCreate, interaction => {
 });
 
 bot.on(Events.MessageCreate, message => {
-    if (message.channel.isSendable()) {
-        message.channel.send("$wa");
-    }
+    console.log(message.content);
 });
 
 const commandsPath = path.join(import.meta.dirname, "commands");
