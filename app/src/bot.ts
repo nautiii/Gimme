@@ -1,48 +1,52 @@
 import fs from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import { Client, Collection, Events, GatewayIntentBits } from "discord.js";
+import { Client, Collection, EmbedBuilder, Events, GatewayIntentBits, MessagePayload } from "discord.js";
 import "dotenv/config";
 
 declare module "discord.js" {
     interface Client {
-        commands: Collection<any, any>;
+        commands: Collection<string, any>;
     }
 }
 
-const bot = new Client({ intents: [GatewayIntentBits.Guilds] });
+const bot = new Client({
+    intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent],
+});
 
 bot.commands = new Collection();
 
-bot.once(Events.ClientReady, async readyClient => {
-    console.log(`Ready! Logged in as ${readyClient.user.tag}`);
-
-    // await bot.application?.commands.create({
-    //     name: "hello",
-    //     description: 'Répond avec "Bonjour!"',
-    // });
+bot.once(Events.ClientReady, async client => {
+    console.log(`Ready! Logged in as ${client.user.tag}`);
 });
 
 bot.on(Events.InteractionCreate, interaction => {
-    // if (!interaction.isChatInputCommand()) return;
-    console.log(interaction);
+    if (interaction.isChatInputCommand()) {
+        try {
+            const command = interaction.client.commands.get(interaction.commandName);
+            command?.execute(interaction);
+        } catch (error) {
+            interaction.reply({ content: `Failed to execute command : ${error}`, ephemeral: true });
+        }
+    }
+});
+
+bot.on(Events.MessageCreate, message => {
+    if (message.channel.isSendable()) {
+        message.channel.send("$wa");
+    }
 });
 
 const commandsPath = path.join(import.meta.dirname, "commands");
+const commands = await Promise.all(
+    fs
+        .readdirSync(commandsPath)
+        .filter(fileName => fileName.endsWith(".ts"))
+        .map(fileName => path.join(commandsPath, fileName))
+        .map(filePath => pathToFileURL(filePath).href)
+        .map(async fileUrl => (await import(fileUrl)).default),
+);
 
-fs.readdirSync(commandsPath)
-    .filter(fileName => fileName.endsWith(".ts"))
-    .map(fileName => path.join(commandsPath, fileName))
-    .map(filePath => pathToFileURL(filePath).href)
-    .map(async fileUrl => (await import(fileUrl)).default)
-    .forEach(async command => {
-        const c = await command;
-        if ("data" in c && "execute" in c) {
-            console.log(c);
-            bot.commands.set(c.data.name, c);
-        } else {
-            console.log(`[WARNING] The command at ${c} is missing a required "data" or "execute" property.`);
-        }
-    });
+commands.forEach(command => bot.commands.set(command.data.name, command));
 
-bot.login(process.env.DISCORD_TOKEN);
+bot.login(process.env.DISCORD_TOKEN).catch(reason => console.error(reason));
